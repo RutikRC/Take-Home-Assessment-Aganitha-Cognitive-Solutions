@@ -1,58 +1,48 @@
-import { MongoClient } from 'mongodb';
+import pg from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const client = new MongoClient(process.env.DATABASE_URL);
+const { Pool } = pg;
 
-let db;
-let linksCollection;
-
-// Connect to MongoDB
-export async function connectDatabase() {
-  try {
-    await client.connect();
-    db = client.db('tinylink');
-    linksCollection = db.collection('links');
-    
-    // Create unique index on code field
-    await linksCollection.createIndex({ code: 1 }, { unique: true });
-    
-    console.log('Connected to MongoDB database');
-    return { db, linksCollection };
-  } catch (error) {
-    console.error('Error connecting to MongoDB:', error);
-    throw error;
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : {
+    rejectUnauthorized: false
   }
-}
+});
 
-// Initialize database (for compatibility with existing code)
+// Test connection
+pool.on('connect', () => {
+  console.log('Connected to PostgreSQL database');
+});
+
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+  process.exit(-1);
+});
+
+// Initialize database schema
 export async function initializeDatabase() {
+  const client = await pool.connect();
   try {
-    await connectDatabase();
-    console.log('Database initialized');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS links (
+        id SERIAL PRIMARY KEY,
+        code VARCHAR(8) UNIQUE NOT NULL,
+        target_url TEXT NOT NULL,
+        total_clicks INTEGER DEFAULT 0,
+        last_clicked_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    console.log('Database schema initialized');
   } catch (error) {
     console.error('Error initializing database:', error);
     throw error;
+  } finally {
+    client.release();
   }
 }
 
-// Get links collection
-export function getLinksCollection() {
-  if (!linksCollection) {
-    throw new Error('Database not connected. Call connectDatabase() first.');
-  }
-  return linksCollection;
-}
-
-// Close database connection
-export async function closeDatabase() {
-  try {
-    await client.close();
-    console.log('MongoDB connection closed');
-  } catch (error) {
-    console.error('Error closing database connection:', error);
-  }
-}
-
-export default { connectDatabase, getLinksCollection, closeDatabase };
+export default pool;

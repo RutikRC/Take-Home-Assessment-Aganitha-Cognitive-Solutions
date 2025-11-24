@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import linksRouter from './routes/links.js';
-import { initializeDatabase, getLinksCollection } from './db/index.js';
+import pool, { initializeDatabase } from './db/index.js';
 
 dotenv.config();
 
@@ -34,24 +34,23 @@ app.get('/:code', async (req, res) => {
     }
     
     // Find link
-    const linksCollection = getLinksCollection();
-    const link = await linksCollection.findOne({ code });
+    const result = await pool.query(
+      'SELECT target_url FROM links WHERE code = $1',
+      [code]
+    );
     
-    if (!link) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Link not found' });
     }
     
     // Update click count and last clicked time
-    await linksCollection.updateOne(
-      { code },
-      { 
-        $inc: { total_clicks: 1 },
-        $set: { last_clicked_at: new Date() }
-      }
+    await pool.query(
+      'UPDATE links SET total_clicks = total_clicks + 1, last_clicked_at = NOW() WHERE code = $1',
+      [code]
     );
     
     // Redirect (302)
-    res.redirect(302, link.target_url);
+    res.redirect(302, result.rows[0].target_url);
   } catch (error) {
     console.error('Error redirecting:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -75,4 +74,3 @@ async function startServer() {
 }
 
 startServer();
-

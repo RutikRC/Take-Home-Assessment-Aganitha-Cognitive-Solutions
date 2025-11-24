@@ -1,6 +1,6 @@
 # TinyLink - URL Shortener
 
-A full-stack URL shortener application similar to bit.ly, built with Node.js, Express, Next.js, and MongoDB.
+A full-stack URL shortener application similar to bit.ly, built with Node.js, Express, Next.js, and PostgreSQL.
 
 ## Features
 
@@ -15,7 +15,7 @@ A full-stack URL shortener application similar to bit.ly, built with Node.js, Ex
 
 - **Backend**: Node.js + Express
 - **Frontend**: Next.js 14 (App Router) + React
-- **Database**: MongoDB (MongoDB Atlas)
+- **Database**: PostgreSQL (Neon)
 - **Styling**: Tailwind CSS
 
 ## Project Structure
@@ -42,7 +42,7 @@ A full-stack URL shortener application similar to bit.ly, built with Node.js, Ex
 ### Prerequisites
 
 - Node.js 18+ installed
-- MongoDB database (local or MongoDB Atlas)
+- PostgreSQL database (local or Neon)
 - npm or yarn
 
 ### Backend Setup
@@ -62,9 +62,9 @@ npm install
 cp .env.example .env
 ```
 
-4. Update `.env` with your MongoDB connection string:
+4. Update `.env` with your database URL:
 ```
-DATABASE_URL=mongodb+srv://username:password@cluster.mongodb.net/?appName=Cluster0
+DATABASE_URL=postgresql://user:password@host:5432/database
 PORT=3001
 BASE_URL=http://localhost:3001
 ```
@@ -152,12 +152,11 @@ The frontend will be available at `http://localhost:3000`
    - `NEXT_PUBLIC_BASE_URL` (your frontend URL)
 4. Deploy
 
-### Database (MongoDB Atlas)
+### Database (Neon)
 
-1. Create a new MongoDB Atlas cluster
-2. Get your connection string from the Atlas dashboard
+1. Create a new Neon project
+2. Copy the connection string
 3. Use it as `DATABASE_URL` in your backend environment variables
-4. The database will automatically create the `tinylink` database and `links` collection on first use
 
 ## Testing
 
