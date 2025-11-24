@@ -1,5 +1,5 @@
 import express from 'express';
-import pool from '../db/index.js';
+import { getLinksCollection } from '../db/index.js';
 import { validateCreateLink, validateCode, handleValidationErrors } from '../middleware/validation.js';
 
 const router = express.Router();
@@ -16,6 +16,7 @@ function generateCode(length = 6) {
 
 // Generate unique code
 async function generateUniqueCode() {
+  const linksCollection = getLinksCollection();
   let code;
   let exists = true;
   let attempts = 0;
@@ -23,8 +24,8 @@ async function generateUniqueCode() {
   while (exists && attempts < 10) {
     const length = Math.floor(Math.random() * 3) + 6; // 6-8 characters
     code = generateCode(length);
-    const result = await pool.query('SELECT id FROM links WHERE code = $1', [code]);
-    exists = result.rows.length > 0;
+    const existing = await linksCollection.findOne({ code });
+    exists = existing !== null;
     attempts++;
   }
   
@@ -38,6 +39,7 @@ async function generateUniqueCode() {
 // POST /api/links - Create link
 router.post('/', validateCreateLink, handleValidationErrors, async (req, res) => {
   try {
+    const linksCollection = getLinksCollection();
     const { target_url, code: customCode } = req.body;
     
     let code = customCode;
@@ -47,22 +49,30 @@ router.post('/', validateCreateLink, handleValidationErrors, async (req, res) =>
       code = await generateUniqueCode();
     } else {
       // Check if code already exists
-      const existing = await pool.query('SELECT id FROM links WHERE code = $1', [code]);
-      if (existing.rows.length > 0) {
+      const existing = await linksCollection.findOne({ code });
+      if (existing) {
         return res.status(409).json({ error: 'Code already exists' });
       }
     }
     
     // Insert new link
-    const result = await pool.query(
-      'INSERT INTO links (code, target_url) VALUES ($1, $2) RETURNING *',
-      [code, target_url]
-    );
+    const newLink = {
+      code,
+      target_url,
+      total_clicks: 0,
+      last_clicked_at: null,
+      created_at: new Date()
+    };
     
-    res.status(201).json(result.rows[0]);
+    const result = await linksCollection.insertOne(newLink);
+    const link = await linksCollection.findOne({ _id: result.insertedId });
+    
+    // Remove MongoDB _id and return clean object
+    const { _id, ...linkData } = link;
+    res.status(201).json(linkData);
   } catch (error) {
     console.error('Error creating link:', error);
-    if (error.code === '23505') { // Unique constraint violation
+    if (error.code === 11000) { // MongoDB duplicate key error
       return res.status(409).json({ error: 'Code already exists' });
     }
     res.status(500).json({ error: 'Internal server error' });
@@ -72,10 +82,15 @@ router.post('/', validateCreateLink, handleValidationErrors, async (req, res) =>
 // GET /api/links - List all links
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT code, target_url, total_clicks, last_clicked_at, created_at FROM links ORDER BY created_at DESC'
-    );
-    res.json(result.rows);
+    const linksCollection = getLinksCollection();
+    const links = await linksCollection
+      .find({})
+      .sort({ created_at: -1 })
+      .toArray();
+    
+    // Remove MongoDB _id from each link
+    const cleanLinks = links.map(({ _id, ...link }) => link);
+    res.json(cleanLinks);
   } catch (error) {
     console.error('Error fetching links:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -85,17 +100,17 @@ router.get('/', async (req, res) => {
 // GET /api/links/:code - Get stats for one code
 router.get('/:code', validateCode, handleValidationErrors, async (req, res) => {
   try {
+    const linksCollection = getLinksCollection();
     const { code } = req.params;
-    const result = await pool.query(
-      'SELECT code, target_url, total_clicks, last_clicked_at, created_at FROM links WHERE code = $1',
-      [code]
-    );
+    const link = await linksCollection.findOne({ code });
     
-    if (result.rows.length === 0) {
+    if (!link) {
       return res.status(404).json({ error: 'Link not found' });
     }
     
-    res.json(result.rows[0]);
+    // Remove MongoDB _id
+    const { _id, ...linkData } = link;
+    res.json(linkData);
   } catch (error) {
     console.error('Error fetching link:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -105,10 +120,11 @@ router.get('/:code', validateCode, handleValidationErrors, async (req, res) => {
 // DELETE /api/links/:code - Delete link
 router.delete('/:code', validateCode, handleValidationErrors, async (req, res) => {
   try {
+    const linksCollection = getLinksCollection();
     const { code } = req.params;
-    const result = await pool.query('DELETE FROM links WHERE code = $1 RETURNING *', [code]);
+    const result = await linksCollection.deleteOne({ code });
     
-    if (result.rows.length === 0) {
+    if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Link not found' });
     }
     
@@ -120,4 +136,3 @@ router.delete('/:code', validateCode, handleValidationErrors, async (req, res) =
 });
 
 export default router;
-
